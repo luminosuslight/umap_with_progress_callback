@@ -451,6 +451,7 @@ def fuzzy_simplicial_set(
     apply_set_operations=True,
     verbose=False,
     return_dists=None,
+    on_progress_callback=None,
 ):
     """Given a set of data X, a neighborhood size, and a measure of distance
     compute the fuzzy simplicial set (here represented as a fuzzy graph in
@@ -559,6 +560,7 @@ def fuzzy_simplicial_set(
         j) entry of the matrix represents the membership strength of the
         1-simplex between the ith and jth sample points.
     """
+
     if knn_indices is None or knn_dists is None:
         knn_indices, knn_dists, _ = nearest_neighbors(
             X,
@@ -568,19 +570,26 @@ def fuzzy_simplicial_set(
             angular,
             random_state,
             verbose=verbose,
-        )
+        )  # about 3s for 2k points, quite slow
+
+    if on_progress_callback:
+        on_progress_callback(False, 2, 4, None)
 
     knn_dists = knn_dists.astype(np.float32)
+
 
     sigmas, rhos = smooth_knn_dist(
         knn_dists,
         float(n_neighbors),
         local_connectivity=float(local_connectivity),
-    )
+    )  # about 1s for 2k points, quite slow
 
     rows, cols, vals, dists = compute_membership_strengths(
         knn_indices, knn_dists, sigmas, rhos, return_dists
     )
+
+    if on_progress_callback:
+        on_progress_callback(False, 3, 4, None)
 
     result = scipy.sparse.coo_matrix(
         (vals, (rows, cols)), shape=(X.shape[0], X.shape[0])
@@ -943,6 +952,7 @@ def simplicial_set_embedding(
     parallel=False,
     verbose=False,
     tqdm_kwds=None,
+    on_progress_callback=None,
 ):
     """Perform a fuzzy simplicial set embedding, using a specified
     initialisation method and then minimizing the fuzzy set cross entropy
@@ -1173,6 +1183,7 @@ def simplicial_set_embedding(
             densmap_kwds=densmap_kwds,
             tqdm_kwds=tqdm_kwds,
             move_other=True,
+            on_progress_callback=on_progress_callback,
         )
     else:
         embedding = optimize_layout_generic(
@@ -2246,7 +2257,7 @@ class UMAP(BaseEstimator):
 
         return result
 
-    def fit(self, X, y=None):
+    def fit(self, X, y=None, on_progress_callback=None):
         """Fit X into an embedded space.
 
         Optionally use y for supervised dimension reduction.
@@ -2265,6 +2276,8 @@ class UMAP(BaseEstimator):
             The relevant attributes are ``target_metric`` and
             ``target_metric_kwds``.
         """
+        if on_progress_callback:
+            on_progress_callback(False, 0, 4, None)
 
         X = check_array(X, dtype=np.float32, accept_sparse="csr", order="C")
         self._raw_data = X
@@ -2436,7 +2449,7 @@ class UMAP(BaseEstimator):
             try:
                 # sklearn pairwise_distances fails for callable metric on sparse data
                 _m = self.metric if self._sparse_data else self._input_distance_func
-                dmat = pairwise_distances(X[index], metric=_m, **self._metric_kwds)
+                dmat = pairwise_distances(X[index], metric=_m, **self._metric_kwds)  # 1.5s for 2k points, not faster with multiple jobs
             except (ValueError, TypeError) as e:
                 # metric is numba.jit'd or not supported by sklearn,
                 # fallback to pairwise special
@@ -2462,6 +2475,10 @@ class UMAP(BaseEstimator):
                         metric=self._input_distance_func,
                         kwds=self._metric_kwds,
                     )
+
+            if on_progress_callback:
+                on_progress_callback(False, 1, 4, None)
+
             # set any values greater than disconnection_distance to be np.inf.
             # This will have no effect when _disconnection_distance is not set since it defaults to np.inf.
             edges_removed = np.sum(dmat >= self._disconnection_distance)
@@ -2485,7 +2502,9 @@ class UMAP(BaseEstimator):
                 True,
                 self.verbose,
                 self.densmap or self.output_dens,
-            )
+                on_progress_callback=on_progress_callback,
+            )  # 5s for 2k points, slowest part of everything
+
             # Report the number of vertices with degree 0 in our our umap.graph_
             # This ensures that they were properly disconnected.
             vertices_disconnected = np.sum(
@@ -2554,6 +2573,7 @@ class UMAP(BaseEstimator):
                 True,
                 self.verbose,
                 self.densmap or self.output_dens,
+                on_progress_callback=on_progress_callback,
             )
             # Report the number of vertices with degree 0 in our our umap.graph_
             # This ensures that they were properly disconnected.
@@ -2686,6 +2706,7 @@ class UMAP(BaseEstimator):
                 self.n_epochs,
                 init,
                 random_state,  # JH why raw data?
+                on_progress_callback=on_progress_callback,
             )
             # Assign any points that are fully disconnected from our manifold(s) to have embedding
             # coordinates of np.nan.  These will be filtered by our plotting functions automatically.
@@ -2710,7 +2731,7 @@ class UMAP(BaseEstimator):
 
         return self
 
-    def _fit_embed_data(self, X, n_epochs, init, random_state):
+    def _fit_embed_data(self, X, n_epochs, init, random_state, on_progress_callback=None):
         """A method wrapper for simplicial_set_embedding that can be
         replaced by subclasses.
         """
@@ -2737,9 +2758,10 @@ class UMAP(BaseEstimator):
             self.random_state is None,
             self.verbose,
             tqdm_kwds=self.tqdm_kwds,
+            on_progress_callback=on_progress_callback,
         )
 
-    def fit_transform(self, X, y=None):
+    def fit_transform(self, X, y=None, on_progress_callback=None):
         """Fit X into an embedded space and return that transformed
         output.
 
@@ -2769,7 +2791,7 @@ class UMAP(BaseEstimator):
         r_emb: array, shape (n_samples)
             Local radii of data points in the embedding (log-transformed).
         """
-        self.fit(X, y)
+        self.fit(X, y, on_progress_callback=on_progress_callback)
         if self.transform_mode == "embedding":
             if self.output_dens:
                 return self.embedding_, self.rad_orig_, self.rad_emb_

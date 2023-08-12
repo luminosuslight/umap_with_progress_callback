@@ -237,6 +237,7 @@ def optimize_layout_euclidean(
     densmap_kwds=None,
     tqdm_kwds=None,
     move_other=False,
+    on_progress_callback=None,
 ):
     """Improve an embedding using stochastic gradient descent to minimize the
     fuzzy set cross entropy between the 1-skeletons of the high dimensional
@@ -397,6 +398,9 @@ def optimize_layout_euclidean(
         )
 
         alpha = initial_alpha * (1.0 - (float(n) / float(n_epochs)))
+
+        if on_progress_callback:
+            on_progress_callback(True, n, n_epochs, head_embedding)
 
     return head_embedding
 
