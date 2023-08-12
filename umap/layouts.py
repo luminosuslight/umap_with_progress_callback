@@ -399,7 +399,7 @@ def optimize_layout_euclidean(
 
         alpha = initial_alpha * (1.0 - (float(n) / float(n_epochs)))
 
-        if on_progress_callback:
+        if on_progress_callback and n % 10 == 0:
             on_progress_callback(True, n, n_epochs, head_embedding)
 
     return head_embedding
